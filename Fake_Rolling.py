@@ -106,8 +106,11 @@ class Fake_Rolling(BaseMetric):
             for key,val in rolling_cadence.items():
                 final_cadence=np.concatenate((final_cadence,val))
 
+            dictout={}
+            dictout['dataSlice']=final_cadence
+
             pkl_file = open('Rolling_Cadence_'+self.fieldName+'_'+str(self.fieldID_ref[0])+'.pkl','w')
-            pkl.dump(final_cadence, pkl_file)
+            pkl.dump(dictout, pkl_file)
             pkl_file.close()
 
 
@@ -187,9 +190,11 @@ class Fake_Rolling(BaseMetric):
                 for key,val in self.Fields_Rolling[idx].items():
                     final_cadence=np.concatenate((final_cadence,val.reshape((len(val),1))))
 
+                dictout={}
+                dictout['dataSlice']=final_cadence
                 pkl_file = open('Rolling_Cadence_'+self.fieldName+'_'+str(idx)+'_'+str(len(self.fieldID_ref))+'_'+str(int(100.*self.merge_factor))+'.pkl','w')
                 #print 'size',idx,len(final_cadence)
-                pkl.dump(final_cadence, pkl_file)
+                pkl.dump(dictout, pkl_file)
                 pkl_file.close()
 
 
