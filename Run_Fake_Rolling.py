@@ -4,20 +4,24 @@ import lsst.sims.maf.slicers as slicers
 import lsst.sims.maf.db as db
 import lsst.sims.maf.utils as utils
 from Fake_Rolling import Fake_Rolling
-from optparse import OptionParser
+import argparse
 
-parser = OptionParser()
+parser = argparse.ArgumentParser()
 
-parser.add_option("-f", "--fieldname", type="string", default='DD', help="filter [%default]")
-parser.add_option("-i", "--fieldid", type="float", default=290, help="filter [%default]")
-parser.add_option("-o", "--opsimrun", type="string", default='minion_1016', help="filter [%default]")
+parser.add_argument("-f", "--fieldname", default='WFD', help="filter [%default]")
+parser.add_argument("-i", "--fieldid",  nargs='+',type=int,help="list of ids [%default]")
+parser.add_argument("-d", "--dbFile", default='None', help="dbFile to process [%default]")
+parser.add_argument("-m", "--merge_factor", type=float,default=0.8, help="Merge factor between periods [%default]")
 
-opts, args = parser.parse_args()
+
+opts= parser.parse_args()
 
 outDir ='Test'
 
 #dbFile = '/data/pgris/sims_operation/Run_OpSim/enigma_1189_sqlite.db'
-dbFile = '/data/pgris/sims_operation/Run_OpSim/'+opts.opsimrun+'_sqlite.db'
+#dbFile = '/data/pgris/sims_operation/Run_OpSim/'+opts.opsimrun+'_sqlite.db'
+#dbFile = '/sps/lsst/data/dev/pgris/sims_operations/DB_Files/'+opts.opsimrun+'_sqlite.db'
+dbFile = opts.dbFile
 #dbFile = '/data/pgris/sims_operation/Run_OpSim/clrlsstsrv_1068_sqlite.db'
 opsimdb = utils.connectOpsimDb(dbFile)
 resultsDb = db.ResultsDb(outDir=outDir)
@@ -30,7 +34,7 @@ print 'hello',proptags,propinfo
 #field='WFD'
 
 
-metric=Fake_Rolling(m5Col='fiveSigmaDepth',fieldname=opts.fieldname,fieldID=opts.fieldid)
+metric=Fake_Rolling(m5Col='fiveSigmaDepth',fieldname=opts.fieldname,fieldID=opts.fieldid,merge_factor=opts.merge_factor)
 #slicer = slicers.HealpixSlicer(nside=256)
 
 
