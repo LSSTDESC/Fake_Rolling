@@ -5,6 +5,8 @@ import pickle as pkl
 from Sky_Brightness_With_Moonlight import SkyBrightness
 import palpy as pal
 import math
+from Parameters import parameters
+from lsst.sims.photUtils import SignalToNoise
 
 DEG2RAD = math.pi / 180.    # radians = degrees * DEG2RAD
 RAD2DEG = 180. / math.pi    # degrees = radians * RAD2DEG
@@ -48,7 +50,6 @@ class Fake_Rolling(BaseMetric):
 
         self.uniqueBlocks = uniqueBlocks
         
-
     def run(self, dataSlice, slicePoint=None):
 
         if len(self.fieldID_ref)==1:
@@ -271,8 +272,10 @@ class Fake_Rolling(BaseMetric):
                         break
             mysky=SkyBrightness(data[self.fieldRA][0],data[self.fieldDec][0],data[self.mjdCol][0],data[self.dateCol][0],data[self.filterCol][0],data[self.airmass][0])
             array_copy[i][self.filtSkyBrightness]=mysky.new_skybrightness()
+            array_copy[i][self.m5Col]=self.Recompute_fiveSigmaDepth(array_copy[i][self.airmass],array_copy[i][self.visitTime],array_copy[i][self.filtSkyBrightness],array_copy[i][self.filterCol][0],array_copy[i][self.rawSeeing])
 
         return array_copy
+    
             
     def Shift(self,array_ref,array_add):
 
@@ -482,3 +485,20 @@ class Fake_Rolling(BaseMetric):
         #am = slalib.sla_airmas (zd_RAD)
         am = pal.airmas(zd_RAD)
         return am
+
+    def Recompute_fiveSigmaDepth(self,airmass,visitexptime,filtskybrightness,filtre,seeing):
+        
+        param=parameters()
+        Filter_Wavelength_Correction = np.power(500.0 / param.filterWave[filtre], 0.3)
+        Airmass_Correction = math.pow(airmass,0.6)
+        FWHM_Sys = param.FWHM_Sys_Zenith * Airmass_Correction
+        FWHM_Atm = seeing * Filter_Wavelength_Correction * Airmass_Correction
+        finSeeing = param.scaleToNeff * math.sqrt(np.power(FWHM_Sys,2) + param.atmNeffFactor * np.power(FWHM_Atm,2))
+        FWHMeff = SignalToNoise.FWHMgeom2FWHMeff(finSeeing)
+         
+        Tscale = visitexptime/ 30.0 * np.power(10.0, -0.4*(filtskybrightness - param.msky[filtre]))
+        dCm = param.dCm_infinity[filtre] - 1.25*np.log10(1 + np.power(10.,0.8*param.dCm_infinity[filtre]- 1.)/Tscale)
+
+        m5_recalc=dCm+param.Cm[filtre]+0.5*(filtskybrightness-21.)+2.5*np.log10(0.7/finSeeing)-param.kAtm[filtre]*(airmass-1.)+1.25*np.log10(visitexptime/30.)
+        
+        return m5_recalc
