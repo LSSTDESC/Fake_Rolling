@@ -5,6 +5,8 @@ import lsst.sims.maf.db as db
 import lsst.sims.maf.utils as utils
 from Fake_Rolling import Fake_Rolling
 import argparse
+from shutil import copyfile
+
 
 parser = argparse.ArgumentParser()
 
@@ -12,7 +14,8 @@ parser.add_argument("-f", "--fieldname", default='WFD', help="filter [%default]"
 parser.add_argument("-i", "--fieldid",  nargs='+',type=int,help="list of ids [%default]")
 parser.add_argument("-d", "--dbFile", default='None', help="dbFile to process [%default]")
 parser.add_argument("-m", "--merge_factor", type=float,default=0.8, help="Merge factor between periods [%default]")
-
+parser.add_argument("-s", "--save_DB", type=int,default=1, help="Save in a DB file[%default]")
+parser.add_argument("-n", "--new_DB_name", default='Rolling.db', help="output dbFile [%default]")
 
 opts= parser.parse_args()
 
@@ -33,8 +36,9 @@ print 'hello',proptags,propinfo
 #numID=744
 #field='WFD'
 
+copyfile(opts.dbFile,opts.new_DB_name)
 
-metric=Fake_Rolling(m5Col='fiveSigmaDepth',fieldname=opts.fieldname,fieldID=opts.fieldid,merge_factor=opts.merge_factor)
+metric=Fake_Rolling(fieldname=opts.fieldname,fieldID=opts.fieldid,merge_factor=opts.merge_factor,db_name=opts.new_DB_name)
 #slicer = slicers.HealpixSlicer(nside=256)
 
 

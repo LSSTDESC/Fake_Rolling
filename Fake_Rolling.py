@@ -7,6 +7,8 @@ import palpy as pal
 import math
 from Parameters import parameters
 from lsst.sims.photUtils import SignalToNoise
+#from Write_DB import Write_DB
+import sqlite3
 
 DEG2RAD = math.pi / 180.    # radians = degrees * DEG2RAD
 RAD2DEG = 180. / math.pi    # degrees = radians * RAD2DEG
@@ -19,11 +21,11 @@ class Fake_Rolling(BaseMetric):
     Measure how many time series meet a given time and filter distribution requirement.Fake 
     """
     
-    def __init__(self, metricName='Fake_Rolling', m5Col='fiveSigmaDepth', units='', badval=-666,uniqueBlocks=False,fieldname='DD',fieldID=[290],merge_factor=0.8,**kwargs):
+    def __init__(self, metricName='Fake_Rolling', units='', badval=-666,uniqueBlocks=False,fieldname='DD',fieldID=[290],merge_factor=0.8,db_name='Rolling.db',**kwargs):
+
         self.mjdCol ='expMJD'
         self.filterCol='filter'
-        self.m5Col = m5Col
-        self.fieldID='fieldID'
+        self.m5Col = 'fiveSigmaDepth'
         self.dateCol = 'expDate'
         self.fieldRA='fieldRA'
         self.fieldDec='fieldDec'
@@ -46,9 +48,13 @@ class Fake_Rolling(BaseMetric):
 
         self.bands=['u','g','r','i','z','y']
 
-        super(Fake_Rolling, self).__init__(col=[self.mjdCol,self.m5Col, self.filterCol, self.dateCol,self.fieldRA,self.fieldDec, self.ditheredRA,self.ditheredDec,self.visitTime,self.rawSeeing,self.moonPhase,self.airmass,self.filtSkyBrightness,self.fieldID],metricName=metricName, units=units, badval=badval, **kwargs)
+        self.cols=['obsHistID', 'sessionID', 'propID', 'fieldID', 'fieldRA', 'fieldDec', 'filter', 'expDate', 'expMJD', 'night', 'visitTime', 'visitExpTime', 'finRank', 'FWHMeff', 'FWHMgeom', 'transparency', 'airmass', 'vSkyBright', 'filtSkyBrightness', 'rotSkyPos', 'rotTelPos', 'lst', 'altitude', 'azimuth', 'dist2Moon', 'solarElong', 'moonRA', 'moonDec', 'moonAlt', 'moonAZ', 'moonPhase', 'sunAlt', 'sunAz', 'phaseAngle', 'rScatter', 'mieScatter', 'moonIllum', 'moonBright', 'darkBright', 'rawSeeing', 'wind', 'humidity', 'slewDist', 'slewTime', 'fiveSigmaDepth', 'ditheredRA', 'ditheredDec']
+
+        super(Fake_Rolling, self).__init__(col=self.cols,metricName=metricName, units=units, badval=badval, **kwargs)
 
         self.uniqueBlocks = uniqueBlocks
+
+        self.db_name=db_name
         
     def run(self, dataSlice, slicePoint=None):
 
@@ -61,6 +67,14 @@ class Fake_Rolling(BaseMetric):
 
         dataSlice = dataSlice[np.where(dataSlice[self.fieldID]==self.fieldID_ref)]
         if len(dataSlice) > 0:
+
+            conn = sqlite3.connect(self.db_name)
+            cursor=conn.cursor()
+            print "Opened database successfully - removing fieldid ",dataSlice[self.fieldID][0]
+            cursor.execute("DELETE FROM Summary WHERE "+self.fieldID+" =="+str(dataSlice[self.fieldID][0])+";")
+            conn.commit()
+            conn.close()
+
             dataSlice.sort(order=self.mjdCol)
             
             seasons=self.Get_Seasons(dataSlice)
@@ -101,7 +115,19 @@ class Fake_Rolling(BaseMetric):
                     rolling_cadence[iseason+2]=np.concatenate((rolling_cadence[iseason+2],season_remain))
 
             
-            #Save the final cadence in a pkl file
+            
+            final_cadence=np.zeros((0,1),dtype=seasons[0].dtype)
+            for key,val in rolling_cadence.items():
+                final_cadence=np.concatenate((final_cadence,val))
+            
+            conn = sqlite3.connect(self.db_name)
+            for ipo in range(len(final_cadence)):
+                self.insert_in_DB(conn,final_cadence[ipo][0])
+            conn.close()
+
+            """
+
+            #Save the final cadence in a pkl file 
             final_cadence=np.zeros((0,1),dtype=seasons[0].dtype)
             for key,val in rolling_cadence.items():
                 final_cadence=np.concatenate((final_cadence,val))
@@ -112,11 +138,11 @@ class Fake_Rolling(BaseMetric):
             pkl_file = open('Rolling_Cadence_'+self.fieldName+'_'+str(self.fieldID_ref[0])+'.pkl','w')
             pkl.dump(dictout, pkl_file)
             pkl_file.close()
-
+            """
 
             #Illustrate results with a plot...
-            self.Plot(self.fieldID_ref,seasons,rolling_cadence)
-            plt.show()
+            #self.Plot(self.fieldID_ref,seasons,rolling_cadence)
+            #plt.show()
 
     def Fake_Multiple(self,dataSlice):
         
@@ -126,6 +152,13 @@ class Fake_Rolling(BaseMetric):
             dataSlice.sort(order=self.mjdCol)
             self.Fields[dataSlice[self.fieldID][0]]=dataSlice
             self.Fields_Seasons[dataSlice[self.fieldID][0]]=self.Get_Seasons(dataSlice)
+            #open the database and remove this field
+            conn = sqlite3.connect(self.db_name)
+            cursor=conn.cursor()
+            print "Opened database successfully - removing fieldid ",dataSlice[self.fieldID][0]
+            cursor.execute("DELETE FROM Summary WHERE "+self.fieldID+" =="+str(dataSlice[self.fieldID][0])+";")
+            conn.commit()
+            conn.close()
 
         if itag and len(self.Fields)==len(self.fieldID_ref):
 
@@ -185,22 +218,42 @@ class Fake_Rolling(BaseMetric):
                         self.Fields_Rolling[idx][io]=np.concatenate((self.Fields_Rolling[idx][io],season_keep))
 
             #Dump Results in pkl files
+            final_cadence={}
             for idx in self.fieldID_ref:
-                final_cadence=np.zeros((0,1),dtype=self.Fields_Rolling[idx][0].dtype)
+                final_cadence[idx]=np.zeros((0,1),dtype=self.Fields_Rolling[idx][0].dtype)
                 for key,val in self.Fields_Rolling[idx].items():
-                    final_cadence=np.concatenate((final_cadence,val.reshape((len(val),1))))
+                    final_cadence[idx]=np.concatenate((final_cadence[idx],val.reshape((len(val),1))))
 
+                
+                print 'inserting',idx 
+                #open the database and remove this field
+                
+                conn = sqlite3.connect(self.db_name)
+                for val in final_cadence[idx]:
+                    self.insert_in_DB(conn,val[0])
+                """
+                if idx == 309:
+                    #print set(final_cadence[idx]['fieldID'])
+                    select=final_cadence[idx][np.where(np.logical_and(final_cadence[idx]['expMJD'] > 60000, final_cadence[idx]['expMJD']< 60500))]
+                    select.sort(order='expMJD')
+                    print select['expMJD']
+                """
+                conn.close()
+                
+                """
                 dictout={}
                 dictout['dataSlice']=final_cadence
                 pkl_file = open('Rolling_Cadence_'+self.fieldName+'_'+str(idx)+'_'+str(len(self.fieldID_ref))+'_'+str(int(100.*self.merge_factor))+'.pkl','w')
                 #print 'size',idx,len(final_cadence)
                 pkl.dump(dictout, pkl_file)
                 pkl_file.close()
-
-
+                """
+            """
             for idx in self.fieldID_ref:
-                self.Plot(idx,self.Fields_Seasons[idx],self.Fields_Rolling[idx])
+                #self.Plot(idx,self.Fields_Seasons[idx],self.Fields_Rolling[idx])
+                self.Plot(idx,self.Fields_Seasons[idx],final_cadence[idx])
             plt.show()
+            """
 
     def Concat(self,combi,iseason):
 
@@ -230,15 +283,16 @@ class Fake_Rolling(BaseMetric):
                     self.Fields_Rolling[val][iseason]=np.concatenate((self.Fields_Rolling[val][iseason],season_keep[j]))
                     fieldRa=self.Fields_Rolling[val][iseason][0][self.fieldRA]
                     fieldDec=self.Fields_Rolling[val][iseason][0][self.fieldDec]
+                    fieldID=self.Fields_Rolling[val][iseason][0][self.fieldID]
                     for kk in range(1,len(self.fieldID_ref)):
                     #shift=self.Shift(self.Fields_Rolling[val][iseason],season_keep[j+kk])
-                        self.Fields_Rolling[val][iseason]=np.concatenate((self.Fields_Rolling[val][iseason],self.Modify(season_keep[j+kk],fieldRa[0],fieldDec[0],shift[j+kk])))               
+                        self.Fields_Rolling[val][iseason]=np.concatenate((self.Fields_Rolling[val][iseason],self.Modify(season_keep[j+kk],fieldRa[0],fieldDec[0],shift[j+kk],fieldID)))               
                 else:
                     self.Fields_Rolling[val][iseason]=np.concatenate((self.Fields_Rolling[val][iseason],season_remain[j]))
 
                 
 
-    def Modify(self, array,fieldRA=None, fieldDec=None,shift=None):
+    def Modify(self, array,fieldRA=None, fieldDec=None,shift=None, fieldID=None):
         
         array_copy=array.copy()
         
@@ -248,8 +302,12 @@ class Fake_Rolling(BaseMetric):
             array_copy[:][self.fieldRA]=fieldRA
         if fieldDec is  not  None:   
             array_copy[:][self.fieldDec]=fieldDec
+        if fieldID is  not  None:   
+            array_copy[:][self.fieldID]=fieldID
+
         if shift is not None:
             array_copy[:][self.mjdCol]+=shift
+        
 
             
         #An adjustment may need to be applied here
@@ -507,3 +565,17 @@ class Fake_Rolling(BaseMetric):
         m5_recalc=dCm+param.Cm[filtre]+0.5*(filtskybrightness-21.)+2.5*np.log10(0.7/finSeeing)-param.kAtm[filtre]*(airmass-1.)+1.25*np.log10(visitexptime/30.)
         
         return m5_recalc
+
+    def insert_in_DB(self,conn,dataSlice):
+        cursor = conn.cursor()
+        table_name='Summary'                     
+        sql = 'insert into %s (obsHistID, sessionID, propID, fieldID, fieldRA, fieldDec, filter, ' %(table_name)
+        sql += 'expDate, expMJD, night, visitTime, visitExpTime, finRank, transparency, airmass, vSkyBright, '
+        sql += 'filtSkyBrightness, rotSkyPos, rotTelPos, lst, altitude, azimuth, dist2Moon, solarElong, moonRA, moonDec, '
+        sql += 'moonAlt, moonAZ, moonPhase, sunAlt, sunAz, phaseAngle, rScatter, mieScatter, moonIllum, '
+        sql += 'moonBright, darkBright, rawSeeing, wind, humidity, slewDist, slewTime, fiveSigmaDepth, '
+        sql += 'FWHMeff, ditheredRA, FWHMgeom, ditheredDec) values '
+        sql += '(%d, %d, %d, %d, %f, %f, "%s", %d, %f, %d, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)' % (dataSlice['obsHistID'],dataSlice['sessionID'],dataSlice['propID'],dataSlice['fieldID'],dataSlice['fieldRA'],dataSlice['fieldDec'],dataSlice['filter'],dataSlice['expDate'],dataSlice['expMJD'],dataSlice['night'],dataSlice['visitTime'],dataSlice['visitExpTime'],dataSlice['finRank'],dataSlice['transparency'],dataSlice['airmass'],dataSlice['vSkyBright'],dataSlice['filtSkyBrightness'],dataSlice['rotSkyPos'],dataSlice['rotTelPos'],dataSlice['lst'],dataSlice['altitude'],dataSlice['azimuth'],dataSlice['dist2Moon'],dataSlice['solarElong'],dataSlice['moonRA'],dataSlice['moonDec'],dataSlice['moonAlt'],dataSlice['moonAZ'],dataSlice['moonPhase'],dataSlice['sunAlt'],dataSlice['sunAz'],dataSlice['phaseAngle'],dataSlice['rScatter'],dataSlice['mieScatter'],dataSlice['moonIllum'],dataSlice['moonBright'],dataSlice['darkBright'],dataSlice['rawSeeing'],dataSlice['wind'],dataSlice['humidity'],dataSlice['slewDist'],dataSlice['slewTime'],dataSlice['fiveSigmaDepth'],dataSlice['FWHMeff'],dataSlice['ditheredRA'],dataSlice['FWHMgeom'],dataSlice['ditheredDec'])
+        cursor.execute(sql)
+        conn.commit()
+
