@@ -4,7 +4,7 @@ Merge fields of observations.
 
 To run this code:
 
-python Run_Fake_Rolling.py --fieldid 309 310 311 --dbFile /sps/lsst/data/dev/pgris/sims_operations/DB_Files/minion_1016_sqlite.db --merge_factor 0.5
+python Run_Fake_Rolling.py --fieldid 309 310 311 --dbFile /sps/lsst/data/dev/pgris/sims_operations/DB_Files/minion_1016_sqlite.db --merge_factor 0.5 --new_DB_name Rolling_minion_1016_309_310_311_80.db
 
 where:
 --fieldid : list of fields to be merged (9 at max)
