@@ -8,9 +8,10 @@ def append(thelist, what, name,test):
 
 conn_origin=sqlite3.connect('/sps/lsst/data/dev/pgris/sims_operations/DB_Files/minion_1016_sqlite.db')
 
-conn_rolling=sqlite3.connect('Rolling_minion_1016_309_310_311_80.db')
+#conn_rolling=sqlite3.connect('Rolling_minion_1016_309_310_311_80.db')
+conn_rolling=sqlite3.connect('Rolling.db')
 
-selec="SELECT * from Summary WHERE fieldID == 312"
+selec="SELECT * from Summary WHERE fieldID == 310"
 
 cursor_origin = conn_origin.cursor()
 cursor_origin.execute(selec)

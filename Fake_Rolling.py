@@ -9,6 +9,10 @@ from Parameters import parameters
 from lsst.sims.photUtils import SignalToNoise
 #from Write_DB import Write_DB
 import sqlite3
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+from astropy.table import Table
+
 
 DEG2RAD = math.pi / 180.    # radians = degrees * DEG2RAD
 RAD2DEG = 180. / math.pi    # degrees = radians * RAD2DEG
@@ -21,7 +25,7 @@ class Fake_Rolling(BaseMetric):
     Measure how many time series meet a given time and filter distribution requirement.Fake 
     """
     
-    def __init__(self, metricName='Fake_Rolling', units='', badval=-666,uniqueBlocks=False,fieldname='DD',fieldID=[290],merge_factor=0.8,db_name='Rolling.db',**kwargs):
+    def __init__(self, metricName='Fake_Rolling', units='', badval=-666,uniqueBlocks=False,fieldname='DD',fieldID=[[309,310,311]],merge_factor=0.8,n_merger=3,ra_grid=2.,db_name='Rolling.db',**kwargs):
 
         self.mjdCol ='expMJD'
         self.filterCol='filter'
@@ -45,6 +49,8 @@ class Fake_Rolling(BaseMetric):
         self.fieldName=fieldname
         self.fieldID_ref=fieldID
         self.merge_factor=merge_factor
+        self.n_merger=n_merger #taken only when the full sky is reshuffled
+        self.ra_grid=ra_grid
 
         self.bands=['u','g','r','i','z','y']
 
@@ -55,13 +61,19 @@ class Fake_Rolling(BaseMetric):
         self.uniqueBlocks = uniqueBlocks
 
         self.db_name=db_name
+        self.data={}
+        itot=0
+        for combi in self.fieldID_ref:
+            itot+=len(combi)
+        self.tot_combi=itot
+
         
     def run(self, dataSlice, slicePoint=None):
 
-        if len(self.fieldID_ref)==1:
+        if self.tot_combi==1:
             self.Fake_Single(dataSlice)
         else:
-            self.Fake_Multiple(dataSlice)
+            self.Fake_Multiple_new(dataSlice)
 
     def Fake_Single(self,dataSlice):
 
@@ -144,7 +156,105 @@ class Fake_Rolling(BaseMetric):
             #self.Plot(self.fieldID_ref,seasons,rolling_cadence)
             #plt.show()
 
-    def Fake_Multiple(self,dataSlice):
+
+    def Fake_Multiple_new(self,dataSlice):
+
+        self.data[dataSlice[self.fieldID][0]]=dataSlice
+        
+        combi_tot=self.fieldID_ref
+        
+        if dataSlice[self.fieldID][0]==2776:
+            #print 'ok pal'
+            if len(combi_tot)==0:
+                combi_tot=self.Get_Combis(self.data)
+
+                print combi_tot
+            for combi in combi_tot:
+                self.Fake_Multiple(combi)
+
+        
+    def Fake_Multiple(self,combi_orig=[]):
+    
+        Fields={}
+        Fields_Seasons={}
+        Fields_Rolling={}
+
+        for fieldID in combi_orig:
+            self.data[fieldID].sort(order=self.mjdCol)
+            Fields[fieldID]=self.data[fieldID]
+            Fields_Seasons[fieldID]=self.Get_Seasons(self.data[fieldID])
+            #open the database and remove this field
+            conn = sqlite3.connect(self.db_name, timeout=30)
+            cursor=conn.cursor()
+            print "Opened database successfully - removing fieldID ",fieldID,'nseasons =',len(Fields_Seasons[fieldID])
+            cursor.execute("DELETE FROM Summary WHERE "+self.fieldID+" =="+str(fieldID)+";")
+            conn.commit()
+            conn.close()
+       
+        for key,val in Fields_Seasons.items():
+            rolling_cadence={}
+            
+            for i in range(len(val)):
+                rolling_cadence[i]=np.zeros((0,1),dtype=val[0].dtype)
+            Fields_Rolling[key]=rolling_cadence     
+
+        for key, seasons in Fields_Seasons.items():
+            season_keep,season_remain=self.Split_Season(seasons[0])
+            Fields_Rolling[key][0]=np.concatenate((Fields_Rolling[key][0],season_keep))
+
+         #season 1 : field_A = field_A + merge_factor * field_B + merge_factor*field_C
+            #           field_B = (1.-merge_factor) * field_B
+            #           field_C = (1.-merge_factor) * field_C
+            #           .......
+
+            #season 2 : field_ B= field_B + merge_factor * field_A + merge_factor*field_B
+            #           field_A = (1.-merge_factor) * field_A
+            #           field_C = (1.-merge_factor) * field_C
+            # 
+
+        seasons_to_tag=[]
+        nseason=1
+        while 10.-nseason >= len(combi_orig):
+            seasons_to_tag.append(nseason)
+            nseason+=len(combi_orig)
+
+        #print seasons_to_tag
+        for season_tag in seasons_to_tag:
+            
+            combi=list(combi_orig)
+            jcount=0
+            for i in range(season_tag,season_tag+len(combi)):
+                jcount+=1
+                
+                iseason=i
+            
+                self.Concat(combi,iseason,Fields_Seasons,Fields_Rolling)
+
+                if jcount < len(combi):
+                        combi[0],combi[jcount]=combi[jcount],combi[0]
+
+        #and for the remaining periods...
+        for idx in combi_orig:
+            for io in range(len(Fields_Rolling[idx])):
+                if len(Fields_Rolling[idx][io]) == 0.:
+                    season_keep,season_remain=self.Split_Season(Fields_Seasons[idx][io])
+                    Fields_Rolling[idx][io]=np.concatenate((Fields_Rolling[idx][io],season_keep))
+        #Dump Results in pkl files
+        final_cadence={}
+        for idx in combi_orig:
+            final_cadence[idx]=np.zeros((0,1),dtype=Fields_Rolling[idx][0].dtype)
+            for key,val in Fields_Rolling[idx].items():
+                final_cadence[idx]=np.concatenate((final_cadence[idx],val.reshape((len(val),1))))
+
+            print 'inserting field',idx 
+                
+            conn = sqlite3.connect(self.db_name, timeout=50)
+            for val in final_cadence[idx]:
+                self.insert_in_DB(conn,val[0])
+    
+            conn.close()
+
+    def Fake_Multiple_old(self,dataSlice):
         
         itag=False
         if dataSlice[self.fieldID][0] in self.fieldID_ref:
@@ -254,8 +364,58 @@ class Fake_Rolling(BaseMetric):
                 self.Plot(idx,self.Fields_Seasons[idx],final_cadence[idx])
             plt.show()
             """
+    def Concat(self,combi,iseason,Fields_Seasons,Fields_Rolling):
 
-    def Concat(self,combi,iseason):
+        percent=[self.merge_factor]*len(combi)
+        percent[0]=1
+
+        shift=[]
+
+        #check whether seasons exist for the considered fields
+        #if not -> do not do enything
+
+        for j,val in enumerate(combi):
+            #print 'alors?',len(Fields_Seasons[val]),iseason
+            if iseason>=len(Fields_Seasons[val]):
+                #print 'should be removed ?'
+                return
+        
+        ref_season=Fields_Seasons[combi[0]][iseason]
+
+        for j,val in enumerate(combi):
+            season=Fields_Seasons[val][iseason]
+            shift.append(self.Shift(ref_season,season))
+
+        for band in self.bands:
+            season_keep=[]
+            season_remain=[]
+            for j,val in enumerate(combi):
+                season=Fields_Seasons[val][iseason]
+                season_band=season[np.where(season[self.filterCol]==band)]
+                season_k,season_rem=self.Split_Season(season_band,percent[j])
+                season_keep.append(season_k)
+                season_remain.append(season_rem)
+
+            for j,val in enumerate(combi):
+                if j ==0:
+                    Fields_Rolling[val][iseason]=np.concatenate((Fields_Rolling[val][iseason],season_keep[j]))
+                    fieldRa=Fields_Rolling[val][iseason][0][self.fieldRA]
+                    fieldDec=Fields_Rolling[val][iseason][0][self.fieldDec]
+                    ditheredRa=Fields_Rolling[val][iseason][0][self.ditheredRA]
+                    ditheredDec=Fields_Rolling[val][iseason][0][self.ditheredDec]
+                    fieldID=Fields_Rolling[val][iseason][0][self.fieldID]
+
+
+                    for kk in range(1,len(combi)):
+                    #shift=self.Shift(self.Fields_Rolling[val][iseason],season_keep[j+kk])
+                        Fields_Rolling[val][iseason]=np.concatenate((Fields_Rolling[val][iseason],self.Modify(season_keep[j+kk],fieldRa[0],fieldDec[0],ditheredRa[0],ditheredDec[0],shift[j+kk],fieldID)))               
+                else:
+                    Fields_Rolling[val][iseason]=np.concatenate((Fields_Rolling[val][iseason],season_remain[j]))
+
+                
+    """
+
+    def Concat_old(self,combi,iseason):
 
         percent=[self.merge_factor]*len(self.fieldID_ref)
         percent[0]=1
@@ -290,9 +450,9 @@ class Fake_Rolling(BaseMetric):
                 else:
                     self.Fields_Rolling[val][iseason]=np.concatenate((self.Fields_Rolling[val][iseason],season_remain[j]))
 
-                
+    """          
 
-    def Modify(self, array,fieldRA=None, fieldDec=None,shift=None, fieldID=None):
+    def Modify(self, array,fieldRA=None, fieldDec=None,ditheredRA=None, ditheredDec=None,shift=None, fieldID=None):
         
         array_copy=array.copy()
         
@@ -300,8 +460,10 @@ class Fake_Rolling(BaseMetric):
         
         if fieldRA is not None :
             array_copy[:][self.fieldRA]=fieldRA
+            array_copy[:][self.ditheredRA]=ditheredRA
         if fieldDec is  not  None:   
             array_copy[:][self.fieldDec]=fieldDec
+            array_copy[:][self.ditheredDec]=ditheredDec
         if fieldID is  not  None:   
             array_copy[:][self.fieldID]=fieldID
 
@@ -579,3 +741,78 @@ class Fake_Rolling(BaseMetric):
         cursor.execute(sql)
         conn.commit()
 
+
+    def Get_Combis(self, data):
+
+         pos_tab= Table(names=('fieldID','fieldRA','fieldDec'), dtype=('i4', 'f8','f8'))
+
+         for key,val in data.items():
+             pos_tab.add_row((key,val['fieldRA'][0],val['fieldDec'][0]))
+
+         ra_step=self.ra_grid # degrees
+         n_dec_zone=self.n_merger # number of region in dec = number of fields to be merged
+
+         ra_min=np.min(pos_tab['fieldRA'])
+    
+         ra_dec_strip={}
+         istrip=-1
+    
+         while ra_min < 360.-ra_step:
+             istrip+=1
+             ra_dec_strip[istrip]={}
+             ra_max=ra_min+ra_step
+             sel=pos_tab[np.where(np.logical_and(np.rad2deg(pos_tab['fieldRA'])>=ra_min,np.rad2deg(pos_tab['fieldRA'])<ra_max))]
+             sel.sort('fieldDec')
+             num_per_part=len(sel)/n_dec_zone
+             ntag=0
+             for count in range(n_dec_zone):
+                 if count == n_dec_zone-1:
+                     ra_dec_strip[istrip][count]=sel[ntag:]
+                 else:
+                     ra_dec_strip[istrip][count]=sel[ntag:ntag+num_per_part] 
+            #print count, len(sel),num_per_part,len(ra_dec_strip[istrip][count])
+                 ntag+=num_per_part
+
+             ra_min+=ra_step
+             #break
+
+
+         ra_dec_final_combi={}
+    
+         for iv in range(len(ra_dec_strip)):
+        #print 'o yes',iv
+             ra_dec_final_combi[iv]={}
+             strip_copy={}
+             icombi=-1
+             for i in range(1,n_dec_zone):
+                 strip_copy[i]=ra_dec_strip[iv][i].copy()
+             for val in ra_dec_strip[iv][0]:
+                 icombi+=1
+                 restable=Table(names=('fieldID','fieldRA','fieldDec'), dtype=('i4', 'f8','f8'))
+                 restable.add_row((val))
+                 for  iu in range(1,n_dec_zone):
+                     strip_copy[iu],resu=self.Get_Nearest(strip_copy[iu],val)
+                     restable.add_row((resu))
+                 ra_dec_final_combi[iv][icombi]=restable
+
+         all_combo=[]
+         for key,vval in ra_dec_final_combi.items():
+             for key,val in vval.items():
+                 local=[]
+                 for ik in range(len(val)):
+                     local.append(val['fieldID'][ik])
+                 all_combo.append(local)
+         
+         return all_combo
+
+    def Get_Nearest(self,orig_table, val):
+   
+        table=Table(orig_table)
+        c = SkyCoord(ra=val['fieldRA']*u.radian, dec=val['fieldDec']*u.radian)  
+        catalog = SkyCoord(ra=table['fieldRA']*u.radian, dec=table['fieldDec']*u.radian)  
+        idx, d2d, d3d = c.match_to_catalog_sky(catalog)
+
+    #print 'astropy matching',idx,d2d,d3d,len(table),type(idx),table
+        theres=[table['fieldID'][int(idx)],table['fieldRA'][int(idx)],table['fieldDec'][int(idx)]]
+        table.remove_row(int(idx))
+        return table,theres

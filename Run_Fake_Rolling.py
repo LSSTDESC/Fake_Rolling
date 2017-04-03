@@ -8,10 +8,24 @@ import argparse
 from shutil import copyfile
 
 
+def do_list_of_fields(s):
+    out=[]
+    for val in s.split(','):
+        print val
+        outb=[]
+        for vval in val.split(' '):
+            if vval != '':
+                outb.append(int(vval))
+        out.append(outb)
+    
+    #x, y, z = map(int, s.split(','))
+    return out
+
+
 parser = argparse.ArgumentParser()
 
 parser.add_argument("-f", "--fieldname", default='WFD', help="filter [%default]")
-parser.add_argument("-i", "--fieldid",  nargs='+',type=int,help="list of ids [%default]")
+parser.add_argument("-i", "--fieldid",default="",help="list of ids [%default]")
 parser.add_argument("-d", "--dbFile", default='None', help="dbFile to process [%default]")
 parser.add_argument("-m", "--merge_factor", type=float,default=0.8, help="Merge factor between periods [%default]")
 parser.add_argument("-s", "--save_DB", type=int,default=1, help="Save in a DB file[%default]")
@@ -38,7 +52,13 @@ print 'hello',proptags,propinfo
 
 copyfile(opts.dbFile,opts.new_DB_name)
 
-metric=Fake_Rolling(fieldname=opts.fieldname,fieldID=opts.fieldid,merge_factor=opts.merge_factor,db_name=opts.new_DB_name)
+combi=[[309,310,311],[312,313,314]]
+combi=[[885,1782,2700]]
+combi=[]
+if opts.fieldid != "":
+    combi=do_list_of_fields(opts.fieldid)
+
+metric=Fake_Rolling(fieldname=opts.fieldname,fieldID=combi,merge_factor=opts.merge_factor,db_name=opts.new_DB_name)
 #slicer = slicers.HealpixSlicer(nside=256)
 
 
