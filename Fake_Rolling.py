@@ -512,7 +512,7 @@ class Fake_Rolling(BaseMetric):
          
         return days_obs, days_no_obs
 
-    def Reshuffle_Days(self,season):
+    def Reshuffle_Days_sameobs(self,season):
          
         days_obs, days_no_obs=self.Get_Obs_per_day(season)
 
@@ -540,7 +540,9 @@ class Fake_Rolling(BaseMetric):
                         trans=np.zeros((0,1),season.dtype)
                         trans=np.vstack([trans,filt[j]])
                     
-                        modify=self.Modify(trans,filt[j][self.fieldRA],filt[j][self.fieldDec],filt[j][self.ditheredRA],filt[j][self.ditheredDec],days_no_obs[band][aleat][1]-filt[j]['expMJD'],filt[j][self.fieldID])
+                        theshift=days_no_obs[band][aleat][1]-filt[j]['expMJD']
+                        theshift+=0.5/24.
+                        modify=self.Modify(trans,filt[j][self.fieldRA],filt[j][self.fieldDec],filt[j][self.ditheredRA],filt[j][self.ditheredDec],theshift,filt[j][self.fieldID])
                         #print 'after mod',modify[0][0][self.fieldID],type(modify[0][0]),len(modify[0][0])
                         output=np.vstack([output, modify[0][0]])
                         #output=np.vstack([output, filt[j]])
@@ -563,6 +565,32 @@ class Fake_Rolling(BaseMetric):
 
         return output
 
+    def Reshuffle_Days(self,season):
+
+        output=np.zeros((0,1),season.dtype)
+
+        #print output.shape,season.shape
+        
+        for band in self.bands:
+            filt=season[np.where(season['filter']==band)]
+            filt.sort(order=self.mjdCol)
+            Tmin=np.min(filt[self.mjdCol])
+            Tmax=np.max(filt[self.mjdCol])
+
+            day_step=(Tmax-Tmin)/float(len(filt))
+
+            #print 'there pal',band,day_step
+            output=np.vstack([output,filt[0]])
+            for j in range(1,len(filt)):
+                trans=np.zeros((0,1),season.dtype)
+                trans=np.vstack([trans,filt[j]])
+                    
+                theshift=Tmin+float(j*int(day_step))
+                modify=self.Modify(trans,shift=theshift-filt[j]['expMJD'])
+                output=np.vstack([output, modify[0][0]])
+    
+        return output
+    
     def Shift(self,array_ref,array_add):
 
         """
