@@ -127,11 +127,12 @@ class SkyBrightness:
 
         self.TwilightProfile()
       
+        self.Twilight=False
         #if self.date < self.sunSetTwil or self.date > self.sunRiseTwil:
         (yy, mm, dd,hh,min,sec) = self.mjd2gre(mjd)[:6]
         if (hh < 20 and self.date > self.sunRiseTwil) or (hh>20  and self.date < self.sunSetTwil):
             totBr = -2.5 * math.log10(10. ** ((-totBr) / 2.5) + self.fluxTwilight)
-            
+            self.Twilight=True
         #print 'after twilight',totBr,self.date,self.sunSetTwil,self.sunRiseTwil
 
         #print 'filterskybrightness',self.FilterSkyBrightness(totBr)

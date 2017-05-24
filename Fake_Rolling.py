@@ -167,8 +167,8 @@ class Fake_Rolling(BaseMetric):
             #print 'ok pal'
             if len(combi_tot)==0:
                 combi_tot=self.Get_Combis(self.data)
-            
-            outfile=open('Combo.txt', 'wb')
+            combi_tot=[[1064,1845,2622]]
+            outfile=open('Combo_new.txt', 'wb')
             for combi in combi_tot:
                 tot=''
                 for val in combi:
@@ -211,11 +211,12 @@ class Fake_Rolling(BaseMetric):
             for i in range(len(val)):
                 #rolling_cadence[i]=np.zeros((0,1),dtype=val[0].dtype)
                 Fields_Rolling[key][i]=np.zeros((0,1),dtype=val[0].dtype)
+                
 
         for key, seasons in Fields_Seasons.items():
             season_keep,season_remain=self.Split_Season(seasons[0])
             Fields_Rolling[key][0]=np.concatenate((Fields_Rolling[key][0],season_keep))
-
+            
          #season 1 : field_A = field_A + merge_factor * field_B + merge_factor*field_C
             #           field_B = (1.-merge_factor) * field_B
             #           field_C = (1.-merge_factor) * field_C
@@ -465,20 +466,24 @@ class Fake_Rolling(BaseMetric):
             ra=data[self.fieldRA][0]
             dec=data[self.fieldDec][0]
             mjd_ref=data[self.mjdCol][0]
+            filtre=data[self.filterCol][0]
             airmass=self.Get_airmass(mjd_ref,ra,dec)
             array_copy[i][self.airmass]=airmass
             array_copy[i][self.dateCol]=int((mjd_ref-simEpoch)*float(DAY))
 
-            if airmass > 1.5:
-                for tirage in range(100):
-                    mjd_rand=np.random.uniform(mjd_ref-0.5,mjd_ref+0.5)
-                    airmass_rand= self.Get_airmass(mjd_rand,ra,dec)
-                    if airmass_rand < 1.5:
+            #if airmass > 1.5 :#or airmass < 1.2:
+            for tirage in range(500):
+                mjd_rand=np.random.uniform(mjd_ref-0.5,mjd_ref+0.5)
+                airmass_rand= self.Get_airmass(mjd_rand,ra,dec)
+                dateCol_rand=int((mjd_rand-simEpoch)*float(DAY))
+                mysky=SkyBrightness(ra,dec,mjd_rand,dateCol_rand,filtre,airmass_rand)
+                if airmass_rand < 1.5 and airmass_rand > 1.2 and not mysky.Twilight:
                         array_copy[i][self.mjdCol]=mjd_rand
                         array_copy[i][self.airmass]=airmass_rand
-                        array_copy[i][self.dateCol]=int((mjd_rand-simEpoch)*float(DAY))
+                        array_copy[i][self.dateCol]=dateCol_rand
                         break
-            mysky=SkyBrightness(data[self.fieldRA][0],data[self.fieldDec][0],data[self.mjdCol][0],data[self.dateCol][0],data[self.filterCol][0],data[self.airmass][0])
+            #mysky=SkyBrightness(data[self.fieldRA][0],data[self.fieldDec][0],data[self.mjdCol][0],data[self.dateCol][0],data[self.filterCol][0],data[self.airmass][0])
+            #print 'resultat',mysky.Twilight,mysky.new_skybrightness(),data[self.filterCol][0]
             array_copy[i][self.filtSkyBrightness]=mysky.new_skybrightness()
             array_copy[i][self.m5Col]=self.Recompute_fiveSigmaDepth(array_copy[i][self.airmass],array_copy[i][self.visitTime],array_copy[i][self.filtSkyBrightness],array_copy[i][self.filterCol][0],array_copy[i][self.rawSeeing])
 
